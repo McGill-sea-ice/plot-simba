@@ -12,7 +12,7 @@ import os
 import sentinelhub as sh
 import json
 
-imei = "300534065720080"
+imei = "300340657110080"
 datapath = "/storage/common/buoy-data/convert-buoy-data/decode_convert_" + imei
 plotpath = "/storage/common/buoy-data/plot-simba/plot_simba_" + imei
 config = sh.SHConfig("cdse")
