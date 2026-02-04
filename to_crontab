@@ -1,9 +1,8 @@
 SHELL=/bin/bash
-MAILTO=jrieck@mcgill.ca
+MAILTO=name@mail.ca
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
 
-root_dirc=/storage2/common/convert-buoy-data
-data_dir1=decode_convert_300534065720080
+root_dirc=/storage2/common/plot-simba
 
 # For details see man 4 crontabs
 
@@ -17,4 +16,4 @@ data_dir1=decode_convert_300534065720080
 # *  *  *  *  * user-name  command to be executed
 
 # run daily script at 9AM
-0 9 * * * ${root_dirc}/${data_dir1}/decode_convert.sh &>> ${root_dirc}/${data_dir1}/decode_convert.log
+0 9 * * * ${root_dirc}}/plot_simba.sh &>> ${root_dirc}/plot_simba.log
