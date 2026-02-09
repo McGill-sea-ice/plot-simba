@@ -151,12 +151,16 @@ def detect_interfaces(da, t_air, isurf, frozendate):
     dep = {"snowTop": snowTop, "snowMid": snowMid, "snowBot": snowBot, "iceTop": iceTop, "iceBot": iceBot}
     return idx, dep
 
-# download satellite image for upper plot is not present
+# produce French (fr==True) and English (fr==False) versions of everything
 for fr in [True, False]:
+    # download satellite image for upper plot if it is not present
+    # please refer to https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/Process/Examples/S2L2A.html
+    # for details on how to download the image etc.
     if fr:
         if not os.path.isfile(plotpath + "/" + imei + "_location_fr.png"):
             with open(plotpath + "/" + imei + '_locdate.json', 'r') as ld:
                 locdate = json.load(ld)
+            # get coordinates of box edges from file 
             box = (locdate["lon1"], locdate["lat1"], locdate["lon2"], locdate["lat2"])
             resolution = 20
             bbox = sh.BBox(bbox=box, crs=sh.CRS.WGS84)
@@ -201,6 +205,7 @@ for fr in [True, False]:
                 )
             response = request_true_color.get_data()
             true_color_imgs = response[0]
+            # make sure plotted image has the same size as the satellite image as to not distort anything
             dpi = 80
             height, width, nbands = true_color_imgs.shape
             figsize = width / float(dpi), height / float(dpi)
@@ -208,6 +213,7 @@ for fr in [True, False]:
             ax = fig.add_axes([0, 0, 1, 1])
             ax.axis('off')
             ax.imshow(true_color_imgs/255*10, interpolation='nearest')
+            # add text and pointer to the buoy location
             ax.text(locdate["xname"], locdate["yname"], locdate["name"], fontsize=32, color="snow", bbox={"edgecolor": "gray", "facecolor": "gray", "alpha": 0.8})
             ax.plot(locdate["xmark"], locdate["ymark"], marker=">", markersize=36, color="orangered")
             ax.text(locdate["xmark"] - 30, locdate["ymark"] + 1, "La bouée", fontsize=26, fontweight="bold", color="dimgray", ha="right", va="center")
@@ -215,6 +221,7 @@ for fr in [True, False]:
             ax.add_patch(r)
             plt.savefig(plotpath + "/" + imei + '_location_fr.png', dpi=dpi)
     else:
+        # repeat everything for the english version
         if not os.path.isfile(plotpath + "/" + imei + "_location.png"):
             with open(plotpath + "/" + imei + '_locdate.json', 'r') as ld:
                 locdate = json.load(ld)
@@ -276,13 +283,15 @@ for fr in [True, False]:
             ax.add_patch(r)
             plt.savefig(plotpath + "/" + imei + '_location.png', dpi=dpi)
 
+# define which year and month we are in
 now = datetime.now()
 thisyear = now.year
 thismonth = now.month
 
-# we cut the first two time steps becaues for this buoy they were tests in a different location
+# try to open the data produced by `convert-buoy-data`
+# if required data is not present, set no_data = True
 try:
-    data_orig = xr.open_dataset(datapath + "/" + imei + ".nc").isel(time=slice(2, None))
+    data_orig = xr.open_dataset(datapath + "/" + imei + ".nc")
     no_data = False
     if thismonth > 6:
         data_in = data_orig.sel(time=slice(str(now.year) + "-07-01", None))
@@ -293,9 +302,12 @@ try:
 except:
     no_data = True
 
+# pre-define some shades of gray
 dg = "#4f4f4f"
 ddg = "#333333"
 
+# if no data has been found, we plot a simple placeholder image that has the same dimensions
+# as the real plot
 if no_data:
     for fr in [True, False]:
         plt.figure(figsize=(10, 4))
@@ -309,14 +321,19 @@ if no_data:
         else:
             plt.savefig(plotpath + "/plot_" + imei + "_top.png", dpi=300)
 else:
+    # extract air temperature data (last index along `pos`)
     t_air_in = data_in.temp.isel(pos=-1)
+    # for each day, find the minimum air temperature and extract the data at that time
+    # because detection of interfaces works best when air temperature is cold, especially 
+    # at times where daytime temperature get close to zero degrees
     t_air_0 = (t_air_in.groupby("time.dayofyear") - t_air_in.groupby("time.dayofyear").min()).compute()
     t_air = t_air_in.where(t_air_0.drop_vars(["pos", "dayofyear"])==0, drop=True)
     data = data_in.where(t_air_0.drop_vars(["pos", "dayofyear"])==0, drop=True).isel(pos=slice(0, -1))
+    # get the most recent air temperature reading
     current_t_air = data_in.temp.isel(pos=-1, time=-1)
     current_datetime = str(str(data_in.time.isel(time=-1).values)[0:10] + " "
                        + str(data_in.time.isel(time=-1).values)[11:16] + "H")
-    #
+    # load file `frozen` that defines whether the water is already frozen or not
     if os.path.isfile(plotpath + "/" + "frozen"):
         with open(plotpath + "/" + "frozen", "r") as f:
             froze = f.read()
@@ -326,7 +343,8 @@ else:
             f.write("False")
         f.close()
         froze = "False"
-    #
+    # if water is already frozen, we need to get the variable indicating the location of the water
+    # surface before water froze
     if froze == "True":
         frozen = True
         if thismonth > 6:
@@ -341,7 +359,9 @@ else:
                 f.close()
     else:
         frozen = False
-    #
+    # if not frozen already we recompute where the water's surface is located each day until 
+    # water freezes. this is done by finding the gradient between the low temporal standard deviation
+    # of water temperature and the high temporal standard deviation of the air temperature
     if not frozen:
         isurf = int(data.temp.std("time").differentiate("pos").argmin("pos").values + 2)
         if thismonth > 6:
@@ -352,7 +372,9 @@ else:
             with open(plotpath + "/" + "isurf" + str(thisyear - 1) + "-" + str(thisyear), "w") as f:
                 f.write(str(isurf))
             f.close()
+        # extract the current temperature at the water's surface
         surftemp = data.temp.isel(pos=isurf)
+        # if that temperature is < 0, ice has formed
         if surftemp.isel(time=-1) <= 0:
             frozen = True
             with open(plotpath + "/" + "frozen", "w") as f:
@@ -370,18 +392,17 @@ else:
             with open(plotpath + "/" + "isurf" + str(thisyear - 1) + "-" + str(thisyear), "r") as f:
                 isurf = int(f.read())
             f.close()
-    #
+    # get the date on which the water froze, if it froze
     if not frozen:
-        da = data #.isel(time=slice(-14, None))
-        t_a = t_air #.isel(time=slice(-14, None))
         frozendate = 0
     else:
         with open(plotpath + "/" + "frozendate", "r") as f:
             frozendate = f.read()
         f.close()
-        da = data #.sel(time=slice(str((np.datetime64(frozendate) - np.timedelta64(2, "W"))), None))
-        t_a = t_air #.sel(time=slice(str((np.datetime64(frozendate) - np.timedelta64(2, "W"))), None))
-    #
+    
+    da = data
+    t_a = t_air
+    # detect interfaces if frozen, otherwise fill dictionaries with some dummy variables
     if frozen:
         idx, dep = detect_interfaces(da, t_a, isurf, frozendate)
     else:
@@ -452,7 +473,7 @@ else:
                                                "%Y %j"),
                 freq="1D"
                 )
-        #
+        # compute the different thicknesses of ice, snow-ice, and snow based on the detected interfaces
         icethick_tmp = xr.merge([(dep["iceBot"] - da.pos.isel(pos=isurf).values).resample(time="1D").mean().sel(time=slice(ctime[0], ctime[-1])).rename("pos"),
                                  xr.DataArray(np.zeros(365) + np.nan, dims=["time"], coords={"time": ctime}, name="pos")], compat="override", join="outer")
         #
@@ -471,13 +492,13 @@ else:
         edata["icethick"][str(y) + "/" + str(y + 1)] = ["null" if np.isnan(x) else x for x in list(icethick_tmp.pos.values)]
         edata["snowicethick"][str(y) + "/" + str(y + 1)] = ["null" if np.isnan(x) else x for x in list(snowicethick_tmp.pos.values)]
         edata["snowthick"][str(y) + "/" + str(y + 1)] = ["null" if np.isnan(x) else x for x in list(snowthick_tmp.pos.values)]
-        #
+        # average the water temperature over the top 10 cm and average to daily resolution
         twater_tmp1 = xr.merge([data_in.isel(pos=isurf+5).resample(time="1D").mean().sel(time=slice(ctime[0], ctime[-1])),
                                xr.DataArray(np.zeros(365) + np.nan, dims=["time"], coords={"time": ctime}, name="temp")], compat="override", join="outer")
         twater_tmp = twater_tmp1.where(twater_tmp1.temp >= 0, other=0)
         twater_tmp = twater_tmp.where(~np.isnan(twater_tmp1), other=np.nan)
         edata["twater"][str(y) + "/" + str(y + 1)] = ["null" if np.isnan(x) else x for x in list(twater_tmp.temp.values)]
-        #
+        # average air temperature to daily resolution
         tair_tmp = xr.merge([t_air_in.resample(time="1D").mean().sel(time=slice(ctime[0], ctime[-1])),
                              xr.DataArray(np.zeros(365) + np.nan, dims=["time"], coords={"time": ctime}, name="temp")], compat="override", join="outer")
         edata["tair"][str(y) + "/" + str(y + 1)] = ["null" if np.isnan(x) else x for x in list(tair_tmp.temp.values)]
@@ -498,7 +519,7 @@ else:
         json.dump(edata, fp)
     with open(plotpath + "/" + imei + '_colormap.json', 'w') as fp:
         json.dump(colormap, fp)
-
+    # define the y-axes of the plots depending on whether or not we need to include snow and ice (frozen)
     if frozen:
         yaxmax = int(np.max(isurf + idx["iceBot"] - idx["snowTop"]).values)
         if np.min(idx["snowTop"]) < 5:
@@ -512,12 +533,14 @@ else:
             yaxmin = 5
     #
     yax = -(da.pos.isel(pos=slice(yaxmin-5, yaxmax+6)) - da.pos.isel(pos=isurf))
+    # find the last index in time dimensions where we have data (avoid getting NaNs in case of instrument malfunction etc.)
     lastIdx = int(len(idx["iceBot"]) - 1 - (idx["iceBot"] / idx["iceBot"]).where(~np.isnan(idx["iceBot"]), other=0)[::-1].argmax("time"))
     if frozen:
         current_t_water = data_in.temp.isel(time=-1).isel(pos=slice(int(idx["iceBot"][lastIdx].values), yaxmax+6)).mean("pos")
     else:
         current_t_water = data_in.temp.isel(time=-1).isel(pos=slice(isurf, yaxmax+6)).mean("pos")
     # fill in some NaNs when there are too large time gaps in the data so the plots look nicer
+    # for periods shorter than 7 days, the plotting will just interpolate between data points
     dayinns = 3600 * 24 * 1e9
     dtdt = np.array([int(data_in.time.diff("time").values[i]) for i in range(0, len(data_in.time)-1)])
     if (dtdt >= 7 * dayinns).any():
@@ -533,13 +556,13 @@ else:
         da_tmp = da_tmp.where(da_tmp.time.isin(data_in.time), other=np.nan)
     else:
         da_tmp = data_in
-    #
+    # define the data to be plotted in the "water" part of the plots together with its y-axis
     water_evo = da_tmp.temp.isel(pos=slice(isurf+1, yaxmax+6)).values.T
     water_evo_yax = yax.sel(pos=slice(data_in.pos.isel(pos=isurf+1), None))
     water_max = np.floor(np.nanmax(water_evo))
     water_bounds = np.linspace(0, water_max, 25)
     water_norm = colors.BoundaryNorm(boundaries=water_bounds, ncolors=256)
-    #
+    # define the data to be plotted in the "air" part of the plots together with its y-axis
     air_evo = da_tmp.temp.isel(pos=slice(yaxmin-5, isurf)).values.T
     air_evo_yax = yax.sel(pos=slice(None, data_in.pos.isel(pos=isurf-1)))
     air_min = np.ceil(np.nanmin(air_evo))
@@ -561,6 +584,7 @@ else:
         caxa = fig.add_subplot(gs[0, 1])
         caxw = fig.add_subplot(gs[2, 1])
         ax2 = fig.add_subplot(gs[0:3, 3])
+        # define strings either french or english
         if fr:
             locim = plt.imread(plotpath + "/" + imei + '_location_fr.png')
             air = "air"
@@ -580,6 +604,7 @@ else:
             snowice2 = "snow\n-ice"
             totalice = "total ice"
         ax1.imshow(locim, interpolation='nearest')
+        # if we have ice, we plot the different layers (ice, snow-ice, snow) additionally to the water and air
         if frozen:
             idep = -(dep["iceBot"] - da.pos.isel(pos=isurf))
             sidep = -(dep["snowBot"] - da.pos.isel(pos=isurf))
@@ -592,6 +617,8 @@ else:
             ax2.fill_between([0, 1], -sidep[lastIdx], y2=0, color="skyblue", zorder=4)
             ax2.fill_between([0, 1], 0, y2=sdep[lastIdx], color="ghostwhite", zorder=3)
             ax2.fill_between([0, 1], 1, y2=np.max(yax), color=cmo.balance(air_norm(current_t_air)))
+            # for each layer, if it is too thin to have its thickness printed inside the layer,
+            # we print it next to it with an arrow pointing to the layer
             airthick = dep["snowTop"][lastIdx]
             if airthick < 5:
                 ax2.annotate("", xytext=(1.55, -(0 - da.pos.isel(pos=isurf)) - (airthick / 2)),
@@ -688,6 +715,7 @@ else:
         ax1.axis('off')
         caxw.axis('off')
         caxa.axis('off')
+        # add some text and save figure
         if fr:
             fig.text(0.05, 0.9, "Épaisseur de glace actuelle estimée: " + r"$\mathdefault{\bf{" + str(snowicethick + icethick) + "\,cm" + "}}$", fontsize=24, ha="left", color="#525252",
                      bbox={"facecolor": "w", "edgecolor": "#787878", "linewidth": 3, "pad": 10})
@@ -699,12 +727,13 @@ else:
             plt.savefig(plotpath + "/" + imei + "_top_fr.png", dpi=300)
         else:
             plt.savefig(plotpath + "/" + imei + "_top.png", dpi=300)
-        # bottom figure
+        # bottom figure with time evolution
         fig = plt.figure(figsize=(10, 5))
         gs = fig.add_gridspec(3, 2, width_ratios=[6, 0.2], height_ratios=[6, 1.8, 6])
         ax1 = fig.add_subplot(gs[0:3, 0])
         caxa = fig.add_subplot(gs[0, 1])
         caxw = fig.add_subplot(gs[2, 1])
+        # if water is frozen we plot ice, snow etc. otherwise, just water and air temperature
         if frozen:
             idep = -(dep["iceBot"] - da.pos.isel(pos=isurf))
             sidep = -(dep["snowBot"] - da.pos.isel(pos=isurf))
