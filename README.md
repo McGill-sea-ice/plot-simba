@@ -14,6 +14,9 @@ The python code in `plot_simba.py` requires certain modules included in `environ
 ### Copernicus SentinelHub
 To include satellite images in the produced plot, the user needs to have an account on the [Copernicus Data Space Ecosystem (CDSE)](https://documentation.dataspace.copernicus.eu/Registration.html) in order to use the [SentinelHub Process API](https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/Process.html) for the download of those images.
 
+### `locdate.json`
+For downloading of the satellite image and to plot the text and pointers on the downloaded image, we need to provide some coordinates and text. This is done in the file `IMEI_locdate.json`, where `IMEI` has to be replaced by your instrument's IMEI. An example is included in the repository as `locate.json`.
+
 ## Usage
 
 ### Automation
