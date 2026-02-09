@@ -18,29 +18,78 @@ plotpath = "/storage/common/buoy-data/plot-simba/plot_simba_" + imei
 config = sh.SHConfig("cdse")
 
 def detect_interfaces(da, t_air, isurf, frozendate):
+    '''Detect air-snow, snow-ice, and ice-water interfaces in temperature profile. Developed 
+    for use with thermistor string data from a SAMS Enterprise Snow and Ice Mass Balance Apparatus (SIMBA)
+    and NOT tested with any other data.
+
+    Parameters
+    ----------
+    da : xarray Dataset
+        2D xarray Dataset created by `convert-buoy-data` (https://github.com/McGill-sea-ice/convert-buoy-data)
+        Dimensions are `time` and `pos` (position along thermistor string) and the temperature variable
+        must be named `temp`. The last index along `pos` (air temperature) has to be removed.
+
+    t_air : xarray DataArray
+        1D xarray DataArray containing the air temperature associated with `da` (the last index along `pos`
+        in the original dataset)
+
+    isurf : int
+        Integer describing at which index along `pos` the initial (non-frozen) water-air interface is located.
+
+    forzendate : str
+        Date on which the water first froze. Format is "YYYY-MM-DD"
+
+    Returns
+    -------
+    idx : dict
+        Dictionary containing the keys ("snowTop", "snowMid", "snowBot", "iceTop", "iceBot"), each with a
+        time series of the indeces of the air-snow interface, the mid-point of the snow cover, the bottom
+        of the snow cover, the top of the ice, and the ice-water interface. 
+
+    dep : dict
+        Same as `idx` but containing the "depths", i.e. the distance in cm along the thermistor string for
+        each variable instead of the indeces.
+    '''
+    # Create boolean, True when air temperature is > 0
     t_air_gt_0 = (t_air >= 0).compute()
-    # 
+    # Get first and second vertical derivative
     dTdz = da.temp.differentiate("pos")
     d2Tdz2 = dTdz.differentiate("pos")
+    # GENERAL: most interface detections apply some simple sanity checks like "snow temperature must be
+    # below zero", "ice bottom must be below snow bottom", etc. In the following, those will not be 
+    # commented.
+    #
+    # ice-water interface (bottom of the ice) is where temperature drops below zero for the first
+    # time when starting from the bottom of the thermistor string
     iiceBot = xr.where(da.temp < 0, True, False)[:, ::-1].cumsum("pos")[:, ::-1].argmin("pos") 
     iceBot = da.pos[iiceBot].where(((iiceBot != 0) & (iiceBot >= isurf)), other=da.pos.isel(pos=isurf).values)
+    # the maximum of the first derivative is located in the snow
     isnowMid = dTdz.where(((da.pos < iceBot) & (da.temp <= 0)), other=0).argmax(dim="pos")
     snowMid = da.pos[isnowMid].where(isnowMid != 0, other=da.pos.isel(pos=isurf).values)
+    # the top of the snow is where the first derivative drops below 0.2 times its maximum value
+    # for the first time when going upwards, starting for the middle of the snow pack
     isnowTop = xr.where(((da.pos < snowMid) & (dTdz < (0.2 * dTdz.max("pos"))) & (da.temp <= 0)), True, False)[::-1, :].cumsum("pos")[::-1, :].argmin("pos")
     snowTop = da.pos[isnowTop].where(isnowTop != 0, other=da.pos.isel(pos=isurf).values)
+    # the bottom of the snow is where the second derivative drops below 0.5 times its minimum
+    # value looking down
     isnowBot = xr.where(((da.pos >= snowTop) & (da.pos <= iceBot) & (da.temp <= 0) 
                          & (d2Tdz2 < (0.5 * d2Tdz2.min("pos")))), True, False).cumsum("pos").argmax("pos")
     snowBot = da.pos[isnowBot].where(isnowBot != 0, other=da.pos.isel(pos=isurf).values)
+    # for the ice top, first find the maximum first derivative below the snow bottom
     iiceTop1st = dTdz.where(((da.pos >= snowBot) & (da.temp <= 0)), other=0).argmax(dim="pos")
     iceTop1st = da.pos[iiceTop1st].where(iiceTop1st != 0, other=da.pos.isel(pos=isurf).values)
+    # the mimimum of the second derivative below the maximum of the first derivative
+    # is the ice top (in most cases snow bottom == ice top)
     iiceTop = d2Tdz2.where(((da.pos >= iceTop1st) & (da.temp <= 0)), other=0).argmin(dim="pos")
     iceTop = da.pos[iiceTop].where(iiceTop != 0, other=da.pos.isel(pos=isurf).values)
-    # redo for air temperatures >= 0
+    # redo for air temperatures >= 0 because most of the gradients reverse in that case
+    # but the algorithm still works quite well unless temperature is close to zero
     isnowMid[t_air_gt_0] = dTdz.where(((da.pos < iceBot) & (da.temp <= 0)), other=0).argmin(dim="pos")[t_air_gt_0]
     snowMid = da.pos[isnowMid].where(isnowMid != 0, other=da.pos.isel(pos=isurf).values)
-    isnowTop[t_air_gt_0] = xr.where(((da.pos < snowMid) & (dTdz > (0.5 * dTdz.min("pos")))), True, False)[::-1, :].cumsum("pos")[::-1, :].argmin("pos")[t_air_gt_0]
+    isnowTop[t_air_gt_0] = xr.where(((da.pos < snowMid) & (dTdz > (0.2 * dTdz.min("pos"))) & (da.temp <= 0)), True, False)[::-1, :].cumsum("pos")[::-1, :].argmin("pos")[t_air_gt_0]
     snowTop = da.pos[isnowTop].where(isnowTop != 0, other=da.pos.isel(pos=isurf).values)
-    isnowBot[t_air_gt_0] = d2Tdz2.where(((da.pos >= snowTop) & (da.temp <= 0)), other=0).argmax(dim="pos")[t_air_gt_0]
+    isnowBot[t_air_gt_0] = d2Tdz2.where(((da.pos >= snowTop) & (da.pos <= iceBot) & (da.temp <= 0)
+                                        & (d2Tdz2 > (0.5 * d2Tdz2.max("pos")))), True, False).cumsum("pos").argmax("pos")[t_air_gt_0]
     snowBot = da.pos[isnowBot].where(isnowBot != 0, other=da.pos.isel(pos=isurf).values)
     iiceTop1st[t_air_gt_0]  = dTdz.where(((da.pos >= snowBot) & (da.temp <= 0)), other=0).argmin(dim="pos")[t_air_gt_0] 
     iceTop1st = da.pos[iiceTop1st].where(iiceTop1st != 0, other=da.pos.isel(pos=isurf).values)
@@ -74,7 +123,7 @@ def detect_interfaces(da, t_air, isurf, frozendate):
                 t = tt + 1
         else:
             t += 1
-    # redo snow bottom and top (they cannot be below ice top)
+    # redo snow bottom and top after corrections to ice top (they cannot be below ice top)
     snowTop[(snowTop > iceTop).compute()] = iceTop[(snowTop > iceTop).compute()]
     snowBot[(snowBot > iceTop).compute()] = iceTop[(snowBot > iceTop).compute()]
     # set everything to NaN where temperature is NaN near the surface
@@ -97,6 +146,7 @@ def detect_interfaces(da, t_air, isurf, frozendate):
     snowBot = snowBot.where(~np.isnan(da.temp.isel(pos=slice(yaxmin-5, yaxmax+6)).mean("pos")), other=np.nan)
     iceTop = iceTop.where(~np.isnan(da.temp.isel(pos=slice(yaxmin-5, yaxmax+6)).mean("pos")), other=np.nan)
     iceBot = iceBot.where(~np.isnan(da.temp.isel(pos=slice(yaxmin-5, yaxmax+6)).mean("pos")), other=np.nan)
+    # create dictionaries with the computed variables
     idx = {"snowTop": isnowTop, "snowMid": isnowMid, "snowBot": isnowBot, "iceTop": iiceTop, "iceBot": iiceBot}
     dep = {"snowTop": snowTop, "snowMid": snowMid, "snowBot": snowBot, "iceTop": iceTop, "iceBot": iceBot}
     return idx, dep
