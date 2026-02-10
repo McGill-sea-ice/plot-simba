@@ -84,11 +84,11 @@ def detect_interfaces(da, t_air, isurf, frozendate):
     iceTop = da.pos[iiceTop].where(iiceTop != 0, other=da.pos.isel(pos=isurf).values)
     # redo for air temperatures >= 0 because most of the gradients reverse in that case
     # but the algorithm still works quite well unless temperature is close to zero
-    isnowMid[t_air_gt_0] = dTdz.where(((da.pos < iceBot) & (da.temp <= 0)), other=0).argmin(dim="pos")[t_air_gt_0]
+    isnowMid[t_air_gt_0] = dTdz.where(((da.pos < iceBot)), other=0).argmin(dim="pos")[t_air_gt_0]
     snowMid = da.pos[isnowMid].where(isnowMid != 0, other=da.pos.isel(pos=isurf).values)
-    isnowTop[t_air_gt_0] = xr.where(((da.pos < snowMid) & (dTdz > (0.2 * dTdz.min("pos"))) & (da.temp <= 0)), True, False)[::-1, :].cumsum("pos")[::-1, :].argmin("pos")[t_air_gt_0]
+    isnowTop[t_air_gt_0] = xr.where(((da.pos < snowMid) & (dTdz > (0.2 * dTdz.min("pos")))), True, False)[::-1, :].cumsum("pos")[::-1, :].argmin("pos")[t_air_gt_0]
     snowTop = da.pos[isnowTop].where(isnowTop != 0, other=da.pos.isel(pos=isurf).values)
-    isnowBot[t_air_gt_0] = d2Tdz2.where(((da.pos >= snowTop) & (da.pos <= iceBot) & (da.temp <= 0)
+    isnowBot[t_air_gt_0] = xr.where(((da.pos >= snowTop) & (da.pos <= iceBot) & (da.temp <= 0)
                                         & (d2Tdz2 > (0.5 * d2Tdz2.max("pos")))), True, False).cumsum("pos").argmax("pos")[t_air_gt_0]
     snowBot = da.pos[isnowBot].where(isnowBot != 0, other=da.pos.isel(pos=isurf).values)
     iiceTop1st[t_air_gt_0]  = dTdz.where(((da.pos >= snowBot) & (da.temp <= 0)), other=0).argmin(dim="pos")[t_air_gt_0] 
