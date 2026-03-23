@@ -9,13 +9,11 @@ import cmocean.cm as cmo
 from datetime import datetime
 import numpy as np
 import os
-import sentinelhub as sh
 import json
 
 imei = "300340657110080"
 datapath = "/storage/common/buoy-data/convert-buoy-data/decode_convert_" + imei
 plotpath = "/storage/common/buoy-data/plot-simba/plot_simba_" + imei
-config = sh.SHConfig("cdse")
 
 def detect_interfaces(da, t_air, isurf, frozendate):
     '''Detect air-snow, snow-ice, and ice-water interfaces in temperature profile. Developed
@@ -152,138 +150,6 @@ def detect_interfaces(da, t_air, isurf, frozendate):
     idx = {"snowTop": isnowTop, "snowMid": isnowMid, "snowBot": isnowBot, "iceTop": iiceTop, "iceBot": iiceBot}
     dep = {"snowTop": snowTop, "snowMid": snowMid, "snowBot": snowBot, "iceTop": iceTop, "iceBot": iceBot}
     return idx, dep
-
-# produce French (fr==True) and English (fr==False) versions of everything
-for fr in [True, False]:
-    # download satellite image for upper plot if it is not present
-    # please refer to https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/Process/Examples/S2L2A.html
-    # for details on how to download the image etc.
-    if fr:
-        if not os.path.isfile(plotpath + "/" + imei + "_location_fr.png"):
-            with open(plotpath + "/" + imei + '_locdate.json', 'r') as ld:
-                locdate = json.load(ld)
-            # get coordinates of box edges from file
-            box = (locdate["lon1"], locdate["lat1"], locdate["lon2"], locdate["lat2"])
-            resolution = 20
-            bbox = sh.BBox(bbox=box, crs=sh.CRS.WGS84)
-            size = sh.bbox_to_dimensions(bbox, resolution=resolution)
-            evalscript_true_color = """
-                //VERSION=3
-
-                function setup() {
-                    return {
-                        input: [{
-                            bands: ["B02", "B03", "B04"]
-                        }],
-                        output: {
-                            bands: 3
-                        }
-                    };
-                }
-
-                function evaluatePixel(sample) {
-                    return [sample.B04, sample.B03, sample.B02];
-                }
-            """
-            request_true_color = sh.SentinelHubRequest(
-                evalscript=evalscript_true_color,
-                input_data=[
-                    sh.SentinelHubRequest.input_data(
-                        data_collection=sh.DataCollection.SENTINEL2_L2A.define_from(
-                            "s2l2a", service_url=config.sh_base_url
-                        ),
-                        time_interval=(locdate["date1"], locdate["date2"])
-                    )
-                ],
-                responses=[
-                    {
-                        "identifier": "default",
-                        "format": {"type": "image/png"},
-                    },
-                ],
-                bbox=bbox,
-                size=size,
-                config=config,
-                )
-            response = request_true_color.get_data()
-            true_color_imgs = response[0]
-            # make sure plotted image has the same size as the satellite image as to not distort anything
-            dpi = 80
-            height, width, nbands = true_color_imgs.shape
-            figsize = width / float(dpi), height / float(dpi)
-            fig = plt.figure(figsize=figsize)
-            ax = fig.add_axes([0, 0, 1, 1])
-            ax.axis('off')
-            ax.imshow(true_color_imgs/255*10, interpolation='nearest')
-            # add text and pointer to the buoy location
-            ax.text(locdate["xname"], locdate["yname"], locdate["name"], fontsize=32, color="snow", bbox={"edgecolor": "gray", "facecolor": "gray", "alpha": 0.8})
-            ax.plot(locdate["xmark"], locdate["ymark"], marker=">", markersize=36, color="orangered")
-            ax.text(locdate["xmark"] - 30, locdate["ymark"] + 1, "La bouée", fontsize=26, fontweight="bold", color="dimgray", ha="right", va="center")
-            r = Rectangle((locdate["xmark"] - 188, locdate["ymark"] - 18), 166, 36,  edgecolor="orangered", facecolor="snow", linewidth=5)
-            ax.add_patch(r)
-            plt.savefig(plotpath + "/" + imei + '_location_fr.png', dpi=dpi)
-    else:
-        # repeat everything for the english version
-        if not os.path.isfile(plotpath + "/" + imei + "_location.png"):
-            with open(plotpath + "/" + imei + '_locdate.json', 'r') as ld:
-                locdate = json.load(ld)
-            box = (locdate["lon1"], locdate["lat1"], locdate["lon2"], locdate["lat2"])
-            resolution = 20
-            bbox = sh.BBox(bbox=box, crs=sh.CRS.WGS84)
-            size = sh.bbox_to_dimensions(bbox, resolution=resolution)
-            evalscript_true_color = """
-                //VERSION=3
-
-                function setup() {
-                    return {
-                        input: [{
-                            bands: ["B02", "B03", "B04"]
-                        }],
-                        output: {
-                            bands: 3
-                        }
-                    };
-                }
-
-                function evaluatePixel(sample) {
-                    return [sample.B04, sample.B03, sample.B02];
-                }
-            """
-            request_true_color = sh.SentinelHubRequest(
-                evalscript=evalscript_true_color,
-                input_data=[
-                    sh.SentinelHubRequest.input_data(
-                        data_collection=sh.DataCollection.SENTINEL2_L2A.define_from(
-                            "s2l2a", service_url=config.sh_base_url
-                        ),
-                        time_interval=(locdate["date1"], locdate["date2"])
-                    )
-                ],
-                responses=[
-                    {
-                        "identifier": "default",
-                        "format": {"type": "image/png"},
-                    },
-                ],
-                bbox=bbox,
-                size=size,
-                config=config,
-                )
-            response = request_true_color.get_data()
-            true_color_imgs = response[0]
-            dpi = 80
-            height, width, nbands = true_color_imgs.shape
-            figsize = width / float(dpi), height / float(dpi)
-            fig = plt.figure(figsize=figsize)
-            ax = fig.add_axes([0, 0, 1, 1])
-            ax.axis('off')
-            ax.imshow(true_color_imgs/255*10, interpolation='nearest')
-            ax.text(locdate["xname"], locdate["yname"], locdate["name"], fontsize=32, color="snow", bbox={"edgecolor": "gray", "facecolor": "gray", "alpha": 0.8})
-            ax.plot(locdate["xmark"], locdate["ymark"], marker=">", markersize=36, color="orangered")
-            ax.text(locdate["xmark"] - 30, locdate["ymark"] + 1, "Buoy location", fontsize=26, fontweight="bold", color="dimgray", ha="right", va="center")
-            r = Rectangle((locdate["xmark"] - 268, locdate["ymark"] - 18), 246, 36,  edgecolor="orangered", facecolor="snow", linewidth=5)
-            ax.add_patch(r)
-            plt.savefig(plotpath + "/" + imei + '_location.png', dpi=dpi)
 
 # define which year and month we are in
 now = datetime.now()
@@ -580,15 +446,11 @@ else:
     # plot the figures
     for fr in [True, False]:
         # top figure first
-        fig = plt.figure(figsize=(9.2, 5))
-        gs = fig.add_gridspec(3, 4, width_ratios=[5, 1.0, 0.1, 1], height_ratios=[6, 1, 6])
-        ax1 = fig.add_subplot(gs[0:3, 0])
-        caxa = fig.add_subplot(gs[0, 1])
-        caxw = fig.add_subplot(gs[2, 1])
-        ax2 = fig.add_subplot(gs[0:3, 3])
+        fig = plt.figure(figsize=(4.9, 5))
+        gs = fig.add_gridspec(1, 1)
+        ax2 = fig.add_subplot(gs[0, 0])
         # define strings either french or english
         if fr:
-            locim = plt.imread(plotpath + "/" + imei + '_location_fr.png')
             air = "air"
             water = "eau"
             snow = "neige"
@@ -597,7 +459,6 @@ else:
             snowice2 = "neige\ngelée"
             totalice = "glace totale"
         else:
-            locim = plt.imread(plotpath + "/" + imei + '_location.png')
             air = "air"
             water = "water"
             snow = "snow"
@@ -605,7 +466,6 @@ else:
             snowice= "snow-ice"
             snowice2 = "snow\n-ice"
             totalice = "total ice"
-        ax1.imshow(locim, interpolation='nearest')
         # if we have ice, we plot the different layers (ice, snow-ice, snow) additionally to the water and air
         if frozen:
             idep = -(dep["iceBot"] - da.pos.isel(pos=isurf))
@@ -701,6 +561,7 @@ else:
                      ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6, path_effects=shadow_effect)
             ax2.text(0.5, np.min(yax) - ((np.max(yax) - np.min(yax)) / 45), str(np.around(0.0, decimals=1)) + r"$^{\circ}$C",
                      ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6)
+	    totalit = {"total ice thickness": str(snowicethick + icethick)}
         else:
             ax2.fill_between([0, 1], np.min(yax), y2=-1, color=cmo.thermal(water_norm(current_t_water)))
             ax2.fill_between([0, 1], 1, y2=np.max(yax), color=cmo.balance(air_norm(current_t_air)))
@@ -710,25 +571,25 @@ else:
             ax2.text(0.5, np.min(yax) + ((np.max(yax) - np.min(yax)) / 14), water, ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6, path_effects=shadow_effect)
             ax2.text(0.5, np.min(yax) - ((np.max(yax) - np.min(yax)) / 45), str(np.around(current_t_water.values, decimals=1)) + r"$^{\circ}$C",
                      ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6)
+	    totalit = {"total ice thickness": "0"}
         ax2.text(0.5, np.min(yax) - ((np.max(yax) - np.min(yax))/ 7), current_datetime[0:10] + "\n" + current_datetime[11:17],
                  ha="center", va="top", fontsize=12, fontweight="bold", color=dg, zorder=6)
         ax2.set_ylim(np.min(yax), np.max(yax))
         ax2.axis('off')
-        ax1.axis('off')
-        caxw.axis('off')
-        caxa.axis('off')
         # add some text and save figure
-        if fr:
-            fig.text(0.05, 0.9, "Épaisseur de glace actuelle estimée: " + r"$\mathdefault{\bf{" + str(snowicethick + icethick) + "\,cm" + "}}$", fontsize=24, ha="left", color="#525252",
-                     bbox={"facecolor": "w", "edgecolor": "#787878", "linewidth": 3, "pad": 10})
-        else:
-            fig.text(0.05, 0.9, "Current estimated ice thickness: " + r"$\mathdefault{\bf{" + str(snowicethick + icethick) + "\,cm" + "}}$", fontsize=24, ha="left", color="#525252",
-                     bbox={"facecolor": "w", "edgecolor": "#787878", "linewidth": 3, "pad": 10})
-        plt.subplots_adjust(wspace=0.1, left=0.05, right=0.75, bottom=0.2, top=0.77)
+        #if fr:
+        #    fig.text(0.05, 0.9, "Épaisseur de glace actuelle estimée: " + r"$\mathdefault{\bf{" + str(snowicethick + icethick) + "\,cm" + "}}$", fontsize=24, ha="left", color="#525252",
+        #             bbox={"facecolor": "w", "edgecolor": "#787878", "linewidth": 3, "pad": 10})
+        #else:
+        #    fig.text(0.05, 0.9, "Current estimated ice thickness: " + r"$\mathdefault{\bf{" + str(snowicethick + icethick) + "\,cm" + "}}$", fontsize=24, ha="left", color="#525252",
+        #             bbox={"facecolor": "w", "edgecolor": "#787878", "linewidth": 3, "pad": 10})
+        plt.subplots_adjust(wspace=0.1, left=0.333, right=0.51, bottom=0.18, top=0.93)
         if fr:
             plt.savefig(plotpath + "/" + imei + "_top_fr.png", dpi=300)
         else:
             plt.savefig(plotpath + "/" + imei + "_top.png", dpi=300)
+	with open(plotpath + "/" + imei + "_totalit.json", "w") as fp:
+    	    json.dump(totalit, fp)
         # bottom figure with time evolution
         fig = plt.figure(figsize=(10, 5))
         gs = fig.add_gridspec(3, 2, width_ratios=[6, 0.2], height_ratios=[6, 1.8, 6])
