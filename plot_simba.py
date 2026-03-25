@@ -561,7 +561,7 @@ else:
                      ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6, path_effects=shadow_effect)
             ax2.text(0.5, np.min(yax) - ((np.max(yax) - np.min(yax)) / 45), str(np.around(0.0, decimals=1)) + r"$^{\circ}$C",
                      ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6)
-            totalit = {"total ice thickness": str(snowicethick + icethick)}
+            totalit = {"total_ice_thickness": str(snowicethick + icethick)}
         else:
             ax2.fill_between([0, 1], np.min(yax), y2=-1, color=cmo.thermal(water_norm(current_t_water)))
             ax2.fill_between([0, 1], 1, y2=np.max(yax), color=cmo.balance(air_norm(current_t_air)))
@@ -571,7 +571,7 @@ else:
             ax2.text(0.5, np.min(yax) + ((np.max(yax) - np.min(yax)) / 14), water, ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6, path_effects=shadow_effect)
             ax2.text(0.5, np.min(yax) - ((np.max(yax) - np.min(yax)) / 45), str(np.around(current_t_water.values, decimals=1)) + r"$^{\circ}$C",
                      ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6)
-            totalit = {"total ice thickness": "0"}
+            totalit = {"total_ice_thickness": "0"}
         ax2.text(0.5, np.min(yax) - ((np.max(yax) - np.min(yax))/ 7), current_datetime[0:10] + "\n" + current_datetime[11:17],
                  ha="center", va="top", fontsize=12, fontweight="bold", color=dg, zorder=6)
         ax2.set_ylim(np.min(yax), np.max(yax))
