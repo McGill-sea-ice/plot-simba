@@ -561,7 +561,7 @@ else:
                      ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6, path_effects=shadow_effect)
             ax2.text(0.5, np.min(yax) - ((np.max(yax) - np.min(yax)) / 45), str(np.around(0.0, decimals=1)) + r"$^{\circ}$C",
                      ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6)
-	    totalit = {"total ice thickness": str(snowicethick + icethick)}
+            totalit = {"total ice thickness": str(snowicethick + icethick)}
         else:
             ax2.fill_between([0, 1], np.min(yax), y2=-1, color=cmo.thermal(water_norm(current_t_water)))
             ax2.fill_between([0, 1], 1, y2=np.max(yax), color=cmo.balance(air_norm(current_t_air)))
@@ -571,7 +571,7 @@ else:
             ax2.text(0.5, np.min(yax) + ((np.max(yax) - np.min(yax)) / 14), water, ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6, path_effects=shadow_effect)
             ax2.text(0.5, np.min(yax) - ((np.max(yax) - np.min(yax)) / 45), str(np.around(current_t_water.values, decimals=1)) + r"$^{\circ}$C",
                      ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6)
-	    totalit = {"total ice thickness": "0"}
+            totalit = {"total ice thickness": "0"}
         ax2.text(0.5, np.min(yax) - ((np.max(yax) - np.min(yax))/ 7), current_datetime[0:10] + "\n" + current_datetime[11:17],
                  ha="center", va="top", fontsize=12, fontweight="bold", color=dg, zorder=6)
         ax2.set_ylim(np.min(yax), np.max(yax))
@@ -588,8 +588,8 @@ else:
             plt.savefig(plotpath + "/" + imei + "_top_fr.png", dpi=300)
         else:
             plt.savefig(plotpath + "/" + imei + "_top.png", dpi=300)
-	with open(plotpath + "/" + imei + "_totalit.json", "w") as fp:
-    	    json.dump(totalit, fp)
+        with open(plotpath + "/" + imei + "_totalit.json", "w") as fp:
+            json.dump(totalit, fp)
         # bottom figure with time evolution
         fig = plt.figure(figsize=(10, 5))
         gs = fig.add_gridspec(3, 2, width_ratios=[6, 0.2], height_ratios=[6, 1.8, 6])
