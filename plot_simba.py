@@ -97,7 +97,7 @@ def detect_interfaces(da, t_air, isurf, frozendate):
     snowTop = da.pos[isnowTop].where(isnowTop != 0, other=da.pos.isel(pos=isurf).values)
     # the bottom of the snow is where the second derivative drops below 0.5 times its minimum
     # value looking down
-    isnowBot = xr.where(((da.pos >= snowTop) & (da.pos <= da.pos.isel(pos=isurf).values) & (da.temp <= 0)
+    isnowBot = xr.where(((da.pos >= snowMid) & (da.pos <= da.pos.isel(pos=isurf).values) & (da.temp <= 0)
                          & (d2Tdz2 < (0.5 * d2Tdz2.min("pos")))), True, False).cumsum("pos").argmax("pos")
     snowBot = da.pos[isnowBot].where(isnowBot != 0, other=da.pos.isel(pos=isurf).values)
     # for the ice top, first find the maximum first derivative below the snow bottom
@@ -114,7 +114,7 @@ def detect_interfaces(da, t_air, isurf, frozendate):
     isnowTop[t_air_gt_0] = xr.where(((da.pos < snowMid)
                                      & (dTdz > (0.33 * dTdz.min("pos")))), True, False)[::-1, :].cumsum("pos")[::-1, :].argmin("pos")[t_air_gt_0]
     snowTop = da.pos[isnowTop].where(isnowTop != 0, other=da.pos.isel(pos=isurf).values)
-    isnowBot[t_air_gt_0] = xr.where(((da.pos >= snowTop) & (da.pos <= iceBot)
+    isnowBot[t_air_gt_0] = xr.where(((da.pos >= snowMid) & (da.pos <= iceBot)
                                      & (d2Tdz2 > (0.5 * d2Tdz2.max("pos")))), True, False).cumsum("pos").argmax("pos")[t_air_gt_0]
     snowBot = da.pos[isnowBot].where(isnowBot != 0, other=da.pos.isel(pos=isurf).values)
     iiceTop1st[t_air_gt_0]  = dTdz.where(((da.pos >= snowBot) & (da.temp <= 0)), other=0).argmin(dim="pos")[t_air_gt_0]
