@@ -8,4 +8,4 @@ date
 source /opt/anaconda3/etc/profile.d/conda.sh
 conda activate /opt/anaconda3/envs/buoy-data
 
-python3 /storage/common/buoy-data/plot-simba/plot_simba.py
+python3 /path/to/plot-simba/plot_simba_403539995324566/plot_simba.py
