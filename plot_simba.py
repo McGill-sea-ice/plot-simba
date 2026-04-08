@@ -613,7 +613,7 @@ else:
             ax2.annotate("", xytext=(-0.5, -(snowicethick + icethick) + ((snowicethick + icethick) / 2)),
                          xy=(0.0, -(snowicethick + icethick)),
                          arrowprops=dict(arrowstyle="-", color=dg), zorder=6)
-            ax2.text(-0.55, -(snowicethick + icethick) + ((snowicethick + icethick) / 2.3), totalice + ":\n" + r"$\mathdefault{\bf{" + str(int(snowicethick + icethick)) + "\,cm" + "}}$",
+            ax2.text(-0.55, -(snowicethick + icethick) + ((snowicethick + icethick) / 2.3), totalice + ":\n" + r"$\mathdefault{\bf{" + str(int(snowicethick + icethick)) + r"\,cm" + r"}}$",
                      ha="right", va="bottom", fontsize=14, color=dg)
             ax2.text(0.5, np.min(yax) + ((np.max(yax) - np.min(yax)) / 14), water,
                      ha="center", va="top", fontsize=14, fontweight="bold", color=dg, zorder=6, path_effects=shadow_effect)
