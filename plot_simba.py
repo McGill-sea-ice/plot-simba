@@ -12,34 +12,17 @@ import os
 import json
 
 imei = "403539995324566"
+ibox = 10
 datapath = "/path/to/convert-buoy-data/decode_convert_" + imei
 plotpath = "/path/to/plot-simba/plot_simba_" + imei
 
 def groupby_multicoords(da, fields):
-    '''Group xarray DataArray by more than one field along same dimension. This function is copied
-    from Oren Talmor: https://stackoverflow.com/a/61664414
-
-    Parameters
-    ----------
-    da : xarray DataArray
-        Data array that the groupby operation will be performed on.
-
-    fields : list
-        List of the fields to group by, e.g. ['time.year', 'time.dayofyear']. The fields need to
-        share a common dimension.
-
-    Returns
-    -------
-    da_out : xarray DataArray
-        Xarray DataArray grouped by `fields`. The usual groupby operations can be applied (`.mean()`, 
-        `.min()`, etc.).
-    '''
     common_dim = da.coords[fields[0]].dims[0]
     tups_arr = np.empty(len(da[common_dim]), dtype=object)
     tups_arr[:] = list(zip(*(da[f].values for f in fields)))
     return da.assign_coords(grouping_zip=xr.DataArray(tups_arr, dims=common_dim)).groupby('grouping_zip')
 
-def detect_interfaces(da, t_air, isurf, frozendate):
+def detect_interfaces(da, t_air, isurf, frozendate, ibox):
     '''Detect air-snow, snow-ice, and ice-water interfaces in temperature profile. Developed
     for use with thermistor string data from a SAMS Enterprise Snow and Ice Mass Balance Apparatus (SIMBA)
     and NOT tested with any other data.
@@ -60,6 +43,9 @@ def detect_interfaces(da, t_air, isurf, frozendate):
 
     forzendate : str
         Date on which the water first froze. Format is "YYYY-MM-DD"
+    
+    ibox : int
+        The number of the first thermistor outside the box.
 
     Returns
     -------
@@ -97,7 +83,7 @@ def detect_interfaces(da, t_air, isurf, frozendate):
     snowTop = da.pos[isnowTop].where(isnowTop != 0, other=da.pos.isel(pos=isurf).values)
     # the bottom of the snow is where the second derivative drops below 0.5 times its minimum
     # value looking down
-    isnowBot = xr.where(((da.pos >= snowMid) & (da.pos <= da.pos.isel(pos=isurf).values) & (da.temp <= 0)
+    isnowBot = xr.where(((da.pos >= snowTop) & (da.pos <= da.pos.isel(pos=isurf).values) & (da.temp <= 0)
                          & (d2Tdz2 < (0.5 * d2Tdz2.min("pos")))), True, False).cumsum("pos").argmax("pos")
     snowBot = da.pos[isnowBot].where(isnowBot != 0, other=da.pos.isel(pos=isurf).values)
     # for the ice top, first find the maximum first derivative below the snow bottom
@@ -114,7 +100,7 @@ def detect_interfaces(da, t_air, isurf, frozendate):
     isnowTop[t_air_gt_0] = xr.where(((da.pos < snowMid)
                                      & (dTdz > (0.33 * dTdz.min("pos")))), True, False)[::-1, :].cumsum("pos")[::-1, :].argmin("pos")[t_air_gt_0]
     snowTop = da.pos[isnowTop].where(isnowTop != 0, other=da.pos.isel(pos=isurf).values)
-    isnowBot[t_air_gt_0] = xr.where(((da.pos >= snowMid) & (da.pos <= iceBot)
+    isnowBot[t_air_gt_0] = xr.where(((da.pos >= snowTop) & (da.pos <= iceBot)
                                      & (d2Tdz2 > (0.5 * d2Tdz2.max("pos")))), True, False).cumsum("pos").argmax("pos")[t_air_gt_0]
     snowBot = da.pos[isnowBot].where(isnowBot != 0, other=da.pos.isel(pos=isurf).values)
     iiceTop1st[t_air_gt_0]  = dTdz.where(((da.pos >= snowBot) & (da.temp <= 0)), other=0).argmin(dim="pos")[t_air_gt_0]
@@ -136,15 +122,14 @@ def detect_interfaces(da, t_air, isurf, frozendate):
     ddticeTop = np.zeros(len(iceTop))
     ddticeTop[1::] = iceTop.values[1::] - iceTop.values[0:-1]
     t = 1
-    dice = 20
     while t < len(iceTop):
-        if np.abs(ddticeTop[t]) > dice:
+        if np.abs(ddticeTop[t]) > 20:
             if t == len(iceTop) - 1:
                 iceTop[t] = iceTop[t-1]
                 t += 1
             else:
                 tt = t
-                while ((iceTop[tt] > iceTop[t-1] + dice) | (iceTop[tt] < iceTop[t-1] - dice)):
+                while ((iceTop[tt] > iceTop[t-1] + 20) | (iceTop[tt] < iceTop[t-1] - 20)):
                     if tt < len(iceTop) - 2:
                         tt += 1
                     else:
@@ -156,19 +141,17 @@ def detect_interfaces(da, t_air, isurf, frozendate):
     # redo snow bottom and top after corrections to ice top (they cannot be below ice top)
     snowTop[(snowTop > iceTop).compute()] = iceTop[(snowTop > iceTop).compute()]
     snowBot[(snowBot > iceTop).compute()] = iceTop[(snowBot > iceTop).compute()]
-    # use values of day before when dTdz is too small
+    # use values of day before when dTdz is too small (except for ice bottom)
     for t in range(1, len(dTdz.time)):
-        if not (np.abs(dTdz.isel(time=t, pos=slice(ibox+2, -2))) > 0.33).any().values:
+        if not (np.abs(dTdz.isel(time=t, pos=slice(ibox, -2))) > 0.33).any().values:
             isnowTop[t] = isnowTop[t-1]
             isnowMid[t] = isnowMid[t-1]
             isnowBot[t] = isnowBot[t-1]
             iiceTop[t] = iiceTop[t-1]
-            iiceBot[t] = iiceBot[t-1]
             snowTop[t] = snowTop[t-1]
             snowMid[t] = snowMid[t-1]
             snowBot[t] = snowBot[t-1]
             iceTop[t] = iceTop[t-1]
-            iceBot[t] = iceBot[t-1]
     # set everything to NaN when surface water temperature is larger than zero (no ice)
     isnowTop = isnowTop.where(da.temp.isel(pos=isurf+2)<=0, other=np.nan).where(~np.isnan(isnowTop), other=np.nan)
     isnowMid = isnowMid.where(da.temp.isel(pos=isurf+2)<=0, other=np.nan).where(~np.isnan(isnowMid), other=np.nan)
@@ -253,11 +236,10 @@ else:
                       - (data_in.temp.isel(pos=0) 
                           / data_in.temp.isel(pos=0)).where(~np.isnan(data_in.temp.isel(pos=0)), other=0)[::-1].argmax("time"))
     lastIdxFull = min(lastIdxAir, lastIdxSurf)
-    # for each day, find the minimum air temperature and extract the data at that time
-    # because detection of interfaces works best when air temperature is cold, especially
-    # at times where daytime temperature get close to zero degrees
-    t_air_0 = (groupby_multicoords(da=t_air_in, fields=["time.year", "time.dayofyear"]) 
-               - groupby_multicoords(da=t_air_in, fields=["time.year", "time.dayofyear"]).min()).compute()
+    # for each day, find the air temperature the furthest away from zero and extract the data at that time
+    # because detection of interfaces works worst when air temperature gets close to zero degrees
+    t_air_0 = (groupby_multicoords(da=abs(t_air_in), fields=["time.year", "time.dayofyear"]) 
+               - groupby_multicoords(da=abs(t_air_in), fields=["time.year", "time.dayofyear"]).max()).compute()
     t_a = t_air_in.where(t_air_0.drop_vars(["grouping_zip"])==0, drop=True)
     da = data_in.where(t_air_0.drop_vars(["grouping_zip"])==0, drop=True).isel(pos=slice(0, -1))
     # get the most recent air temperature reading
@@ -332,7 +314,7 @@ else:
     f.close()
     # detect interfaces if frozen, otherwise fill dictionaries with some dummy variables
     if par["froze" + yyyy]:
-        idx, dep = detect_interfaces(da, t_a, isurf, par["frozendate" + yyyy])
+        idx, dep = detect_interfaces(da, t_a, isurf, par["frozendate" + yyyy], ibox)
     else:
         dummy = (np.ones(len(da.time)) * da.pos.isel(pos=isurf).values).astype(int)
         idx = {"snowTop": xr.DataArray(dummy, dims=["time"], coords={"time": da.time}),
